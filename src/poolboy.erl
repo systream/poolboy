@@ -148,7 +148,7 @@ status(Pool) ->
 init({PoolArgs, WorkerArgs}) ->
     process_flag(trap_exit, true),
     Waiting = queue:new(),
-    Monitors = ets:new(monitors, [private]),
+    Monitors = ets:new(monitors, [public]),
     init(PoolArgs, WorkerArgs, #state{waiting = Waiting, monitors = Monitors}).
 
 init([{worker_module, Mod} | Rest], WorkerArgs, State) when is_atom(Mod) ->
@@ -213,9 +213,12 @@ handle_call({checkout, CRef, Block}, {FromPid, _} = From, State) ->
             true = ets:insert(Monitors, {Pid, CRef, MRef}),
             {reply, Pid, State#state{workers = Left}};
         {empty, _Left} when MaxOverflow > 0, Overflow < MaxOverflow ->
-            {Pid, MRef} = new_worker(Sup, FromPid),
-            true = ets:insert(Monitors, {Pid, CRef, MRef}),
-            {reply, Pid, State#state{overflow = Overflow + 1}};
+            spawn_link(fun() ->
+                    {Pid, MRef} = new_worker(Sup, FromPid),
+                    true = ets:insert(Monitors, {Pid, CRef, MRef}),
+                    gen_server:reply(From, Pid)
+                  end),
+            {noreply, State#state{overflow = Overflow + 1}};
         {empty, _Left} when Block =:= false ->
             {reply, full, State};
         {empty, _Left} ->
