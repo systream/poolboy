@@ -342,8 +342,14 @@ handle_checkin(Pid, State) ->
             gen_server:reply(From, Pid),
             State#state{waiting = Left};
         {empty, Empty} when Overflow > 0 ->
-            ok = dismiss_worker(Sup, Pid),
-            State#state{waiting = Empty, overflow = Overflow - 1};
+              case queue:out(State#state.workers) of
+                {empty, _} ->
+                    Workers = queue:in(Pid, State#state.workers),
+                    State#state{workers = Workers, waiting = Empty};
+                _ ->
+                    ok = dismiss_worker(Sup, Pid),
+                    State#state{waiting = Empty, overflow = Overflow - 1}
+            end;
         {empty, Empty} ->
             Workers = queue:in(Pid, State#state.workers),
             State#state{workers = Workers, waiting = Empty, overflow = 0}
